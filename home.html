@@ -1,0 +1,398 @@
+<html>
+
+
+<style>
+  .chatWrapper{
+    height:100%;
+    width:250px;
+    background-color: black;
+    color:white;
+    float:left;
+    border: 2px solid white;
+  }
+
+  .chatMessages{
+    height:80%;
+    width:100%;
+    background-color: black;
+    color: white;
+    overflow-y: scroll;
+    display:none;
+    border-top: : 2px solid white;
+  }
+
+  #outgoingChatMessage{
+    display:none;
+  }
+
+  #playArea{
+    width:800px;
+    height:800px;
+    float:left;
+    display:none;
+  }
+
+</style>
+
+<body>
+
+<div class = "chatWrapper">
+  <div class = "chatMessages">
+    Incoming Chat: <ul id="incomingChatMessages"></ul>
+  </div>
+
+  <br />
+  <div id="outgoingChatMessage">
+    Message:
+    <input type="textarea" id="message">
+  </div>
+  </br>
+  Your name: <span id="playerName"></span>
+  <input type="textarea" id="nameField">
+  </br>
+  <input type="button" id ="joinGame" value="Join">
+  <input type="button" id ="spectateGame" value="Spectate">
+  <br/>
+  <div id="colourSelectWrap">
+    Pick a colour (not black!)
+    <input id = "colourSelect" type ="color" value="#ffffff">
+  </div>
+</div>
+<h1>ASTEROIDS??!</h1>
+<canvas id="playArea">
+
+</canvas>
+
+</body>
+
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+<script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+
+<script>
+function vector2(xp, yp){
+	return {
+		x: xp || 0,
+		y: yp || 0,
+		add: function(vec2){
+			return new vector2(this.x + vec2.x, this.y + vec2.y);
+		},
+		subtract: function(vec2){
+			return new vector2(this.x - vec2.x, this.y - vec2.y);
+		},
+		rotate: function(v, degrees){
+			var rads = degrees *  0.0174532925;
+			var s = Math.sin(rads);
+			var c = Math.cos(rads);
+
+      var temp = new vector2(this.x, this.y);
+			temp = temp.subtract(v);
+
+			var tx = temp.x;
+			var ty = temp.y;
+
+			temp.x = (c * tx) - (s * ty);
+			temp.y = (s * tx) + (c * ty);
+
+			temp = temp.add(v);
+
+			return temp;
+		},
+		inverse: function(){
+			return new vector2(-this.x, -this.y);
+		},
+    multiply: function(vec2){
+      return new vector2(this.x * vec2.x, this.y * vec2.y);
+    },
+		magnitude: function(){
+			return Math.sqrt((this.x * this.x) + (this.y * this.y));
+		},
+    normalise: function(){
+			var tx = this.x;
+			var ty = this.y;
+      var l = this.magnitude();
+    	tx /= l;
+      ty /= l;
+      return new vector2(tx,ty);
+    }
+	};
+}
+
+	var action = Object.freeze({
+		none: 1,
+		forward: 2,
+		left: 4,
+		right: 8,
+    shoot: 16
+	});
+
+	function clearCanvas(context){
+		context.fillStyle = 'rgb(0,0,0)';
+		context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+	}
+
+	function colour(red,green,blue){
+		return {r: red || 0, g: green || 0, b: blue || 0};
+	}
+
+	function drawPlayer(context, player){
+	  var position = player.position;
+
+    if(player.actions & action.forward){
+
+      var fireVerts = [
+        vector2(position.x + 5, position.y + 10).rotate(position, player.rotation),
+        vector2(position.x + 20, position.y).rotate(position, player.rotation),
+        vector2(position.x + 5, position.y - 10).rotate(position, player.rotation)
+      ];
+
+      context.fillStyle = 'rgb(237,207,39)';
+      context.beginPath();
+      context.moveTo(fireVerts[0].x, fireVerts[0].y);
+
+      for(var i = 1; i < fireVerts.length; i++){
+        context.lineTo(fireVerts[i].x, fireVerts[i].y);
+      }
+
+      context.fill();
+    }
+
+		col = player.colour;
+		context.fillStyle = 'rgb(' + col.r + ','
+								   						 + col.g + ','
+								   				 		 + col.b + ')';
+
+		var vertices = player.vertices;
+
+		context.beginPath();
+		context.moveTo(vertices[0].x, vertices[0].y);
+
+		for(var i = 1; i < vertices.length; i++){
+			context.lineTo(vertices[i].x, vertices[i].y);
+		}
+
+    context.fill();
+
+    //render players name above ship
+    context.font = "14x calibri";
+    var width = context.measureText(player.name);
+    context.fillText(player.name, position.x - (width.width * 0.5), position.y - 25);
+
+	}
+
+  function drawBullet(context, bullet){
+
+    var position = bullet.position;
+
+    var vertices = [
+      vector2(position.x + 4, position.y + 2).rotate(position, bullet.rotation),
+      vector2(position.x + 4, position.y - 2).rotate(position, bullet.rotation),
+      vector2(position.x - 4, position.y - 2).rotate(position, bullet.rotation),
+      vector2(position.x - 4, position.y + 2).rotate(position, bullet.rotation)
+    ];
+
+    context.fillStyle = 'rgb(237,207,39)';
+    context.beginPath();
+    context.moveTo(vertices[0].x, vertices[0].y);
+
+    for(var i = 1; i < vertices.length; i++){
+      context.lineTo(vertices[i].x, vertices[i].y);
+    }
+
+    context.fill();
+  }
+
+  function RandOffset(){
+    return Math.random() * 5;
+  }
+
+  function drawAsteroid(context, asteroid){
+    var position = asteroid.position;
+
+    context.fillStyle = 'rgb(200,200,200)';
+
+    var vertices = asteroid.vertices;
+
+    context.beginPath();
+    context.moveTo(vertices[0].x, vertices[0].y);
+
+    for(var i = 1; i < vertices.length; i++){
+      context.lineTo(vertices[i].x, vertices[i].y);
+    }
+
+    context.fill();
+
+  }
+
+	function gameLoop(context) {
+
+		clearCanvas(context);
+
+    //TODO: optimise this...
+    players = [];
+    for(var i = 0; i < p.length; i++){
+	     players.push(p[i]);
+    }
+
+		//send actions data for this player to server
+    iosocket.emit('input data', actions);
+
+		//render the game
+    for(var i = 0; i < b.length; i++){
+      drawBullet(context, b[i]);
+    }
+		for(var i = 0; i < players.length; i++){
+		  drawPlayer(context, players[i]);
+		}
+    for(var i = 0; i < a.length; i++){
+      drawAsteroid(context, a[i]);
+    }
+	}
+
+	function setUpCanvas(w, h){
+		var canvas = $('#playArea')[0];
+		canvas.width = w;
+		canvas.height = h;
+		var context = canvas.getContext('2d');
+
+		return context;
+	}
+
+	//update the actions mask, which will be sent to the server for processing.
+	function handleKeyPress(s, e){
+
+		keys[e.keyCode] = s;
+
+		if(keys[37] && keys[39]){
+			//if both left and right are pressed, cancel eachother out
+			actions &= ~(action.left | action.right);
+		}
+		else{
+			if(keys[37])
+				actions |= action.left;
+			else
+				actions &= ~action.left;
+
+			if(keys[39])
+				actions |= action.right;
+			else
+				actions &= ~action.right;
+		}
+
+		if(keys[38])
+			actions |= action.forward;
+		else
+			actions &= ~action.forward;
+
+    if(keys[32])
+			actions |= action.shoot;
+		else
+			actions &= ~action.shoot;
+	}
+
+  function login(){
+
+    pName = $('#nameField').val();
+    pColour = hexToRgb($('#colourSelect').val());
+
+    var brightness = (pColour.r + pColour.b + pColour.b) * 0.333333;
+
+    if(brightness < (255 * 0.1) ){
+      alert("colour too dark!:(   Pick something brighter");
+      return false;
+    }
+    if(!pName || pName == '') {
+      alert("name can't be empty :(");
+      return false;
+    }
+
+    $('#nameField').remove();
+    $('#joinGame').remove();
+    $('#spectateGame').remove();
+    $('#colourSelectWrap').remove();
+    $('.chatMessages').show();
+    $('#outgoingChatMessage').show();
+    $('#playArea').show();
+    $('#playerName').html(pName);
+
+    iosocket.emit('player name', {name: pName, colour: pColour});
+
+    return true;
+  }
+
+  function hexToRgb(hex) {
+    var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : null;
+  }
+
+  var players = [];
+  var p = [];
+  var b = [];
+  var a = [];
+  var iosocket = io.connect();
+  var pName = "";
+  var pColour = "";
+  var playing = false;
+  var keys = [];
+  var actions = 0;
+
+  $(function(){
+
+      iosocket.on('connect', function () {
+
+          iosocket.on('message', function(message, colour) {
+              $('#incomingChatMessages').append($('<li style ="color: rgb(' + colour.r + ',' + colour.g + ',' + colour.b + ')"></li>').text(message));
+          });
+
+          iosocket.on('disconnect', function() {
+              $('#incomingChatMessages').append('<li>Disconnected</li>');
+          });
+
+          iosocket.on('player data', function(data) {
+              p = data.player;
+              b = data.bullet;
+              a = data.asteroid;
+
+          });
+      });
+
+      //send chat message
+      $('#message').keypress(function(event) {
+          if(event.which == 13) {
+              event.preventDefault();
+              iosocket.send($('#message').val());
+              $('#incomingChatMessages').append($('<li style ="color: rgb(' + pColour.r + ',' + pColour.g + ',' + pColour.b + ')"</li>')
+                .text(pName + ' : ' + $('#message').val()));
+              $('#message').val('');
+          }
+      });
+
+      $('#joinGame').on('click', function(){
+        if(login()){
+          playing = true;
+          iosocket.emit('join game');
+        }
+      });
+
+      $('#spectateGame').on('click', function(){
+        if(login()){
+          playing = false;
+        }
+      });
+
+      $(document).ready(function(){
+
+    		var context = setUpCanvas(800, 800);
+    		setInterval(function(){gameLoop(context);}, 17);
+    	})
+    	.on('keydown', function(e){ if(playing) handleKeyPress(1, e);})
+    	.on('keyup', function(e){ if(playing) handleKeyPress(0, e);});
+
+  });
+</script>
+
+
+</html>

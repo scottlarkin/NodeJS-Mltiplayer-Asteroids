@@ -1,19 +1,19 @@
-function vector2(xp, yp){
+function vector2(xp, yp) {
 	return {
 		x: xp || 0,
 		y: yp || 0,
-		add: function(vec2){
+		add: function (vec2) {
 			return new vector2(this.x + vec2.x, this.y + vec2.y);
 		},
-		subtract: function(vec2){
+		subtract: function (vec2) {
 			return new vector2(this.x - vec2.x, this.y - vec2.y);
 		},
-		rotate: function(v, degrees){
-			var rads = degrees *  0.0174532925;
+		rotate: function (v, degrees) {
+			var rads = degrees * 0.0174532925;
 			var s = Math.sin(rads);
 			var c = Math.cos(rads);
 
-      var temp = new vector2(this.x, this.y);
+			var temp = new vector2(this.x, this.y);
 			temp = temp.subtract(v);
 
 			var tx = temp.x;
@@ -26,22 +26,22 @@ function vector2(xp, yp){
 
 			return temp;
 		},
-		inverse: function(){
+		inverse: function () {
 			return new vector2(-this.x, -this.y);
 		},
-    multiply: function(vec2){
-      return new vector2(this.x * vec2.x, this.y * vec2.y);
-    },
-		magnitude: function(){
+		multiply: function (vec2) {
+			return new vector2(this.x * vec2.x, this.y * vec2.y);
+		},
+		magnitude: function () {
 			return Math.sqrt((this.x * this.x) + (this.y * this.y));
 		},
-    normalise: function(){
+		normalise: function () {
 			var tx = this.x;
 			var ty = this.y;
-      var l = this.magnitude();
-    	tx /= l;
-      ty /= l;
-      return new vector2(tx,ty);
-    }
+			var l = this.magnitude();
+			tx /= l;
+			ty /= l;
+			return new vector2(tx, ty);
+		}
 	};
 }
